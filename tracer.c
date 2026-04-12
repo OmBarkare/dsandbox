@@ -3,6 +3,7 @@
 #include <sys/ptrace.h>
 #include <sys/wait.h>
 #include <sys/user.h>
+#include <signal.h>
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
@@ -22,10 +23,18 @@ int main(int argc, char *argv[]) {
     }
 
     int status = 0;
-    while(1) {
-        int wait_pid = wait(&status);
+    int in_syscall = 0;
 
-        printf("child_pid: %d\nwait_pid: %d\n", child_pid, wait_pid);
+    int wait_pid = wait(&status);
+    
+    ptrace(PTRACE_SETOPTIONS, wait_pid, NULL, PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEEXEC);
+    printf("set ptraceoptions\n\n");
+
+    ptrace(PTRACE_SYSCALL, wait_pid, NULL, NULL);
+    
+
+    while(1) {
+        wait_pid = wait(&status);
 
         if(WIFEXITED(status)) {
             printf("Child Exited with status code: %d\n\n", WEXITSTATUS(status));
@@ -33,10 +42,25 @@ int main(int argc, char *argv[]) {
         }
 
         struct user_regs_struct regs;
-
+        
         ptrace(PTRACE_GETREGS, wait_pid, NULL, &regs);
 
-        printf("syscall_id: %lld\n\n", regs.orig_rax);
+        // checking if signal is from a exec call
+        if(status>>8 == (SIGTRAP | (PTRACE_EVENT_EXEC<<8))) {
+            printf("CHILD CALLED EXEC\n");
+        }
+
+        // checking is signal is from a syscall
+        if(WSTOPSIG(status) == (SIGTRAP|0x80)) {
+            if(!in_syscall) {
+                in_syscall = 1;
+                printf("child_pid: %d\nwait_pid: %d\n", child_pid, wait_pid);
+                printf("syscall_id: %lld\n", regs.orig_rax);
+            } else {
+                in_syscall = 0;
+                printf("return val: %lld\n\n", regs.rax);
+            }
+        }
 
         ptrace(PTRACE_SYSCALL, wait_pid, NULL, NULL);
     }
