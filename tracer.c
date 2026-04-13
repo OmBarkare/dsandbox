@@ -5,6 +5,37 @@
 #include <sys/user.h>
 #include <signal.h>
 
+const char *syscalls[] = {
+    [0] = "read",
+    [1] = "write",
+    [3] = "close",
+    [5] = "fstat", // <-
+    [9] = "mmap", // <-
+    [10] = "mprotect", // <-
+    [11] = "munmap", // <-
+    [12] = "brk",
+    [16] = "ioctl", // <-
+    [17] = "pread64",
+    [21] = "access",
+    [137] = "statfs",
+    [158] = "arch_prctl",
+    [217] = "getdents64",
+    [218] = "set_tid_address",
+    [231] = "exit_group",
+    [257] = "openat",
+    [273] = "set_robust_list",
+    [302] = "prlimit64",
+    [318] = "getrandom",
+    [334] = "rseq",
+};
+
+char *get_syscall(int syscall_id) {
+    if(syscall_id < 0 || syscalls[syscall_id] == NULL) {
+        return "unknown";
+    }
+    return syscalls[syscall_id];
+}
+
 int main(int argc, char *argv[]) {
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <path_to_binary> [args...] \n", argv[0]);
@@ -31,7 +62,6 @@ int main(int argc, char *argv[]) {
     printf("set ptraceoptions\n\n");
 
     ptrace(PTRACE_SYSCALL, wait_pid, NULL, NULL);
-    
 
     while(1) {
         wait_pid = wait(&status);
