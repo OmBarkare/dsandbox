@@ -84,11 +84,12 @@ int main(int argc, char *argv[]) {
         if(WSTOPSIG(status) == (SIGTRAP|0x80)) {
             if(!in_syscall) {
                 in_syscall = 1;
-                printf("child_pid: %d\nwait_pid: %d\n", child_pid, wait_pid);
-                printf("syscall_id: %lld\n", regs.orig_rax);
+                printf("caller_pid: %d\n", wait_pid);
+                printf("entered syscall %s\n", get_syscall(regs.orig_rax));
+                fflush(stdout);
             } else {
                 in_syscall = 0;
-                printf("return val: %lld\n\n", regs.rax);
+                printf("returned %lld\n\n", regs.rax);
             }
         }
 
