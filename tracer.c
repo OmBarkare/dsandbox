@@ -75,9 +75,9 @@ int main(int argc, char *argv[]) {
         
         ptrace(PTRACE_GETREGS, wait_pid, NULL, &regs);
 
-        // checking if signal is from a exec call
+        // checking if signal is from a exec setup being completed
         if(status>>8 == (SIGTRAP | (PTRACE_EVENT_EXEC<<8))) {
-            printf("CHILD CALLED EXEC\n");
+            printf("Child Finished setting up exec, returning control to child\n");
         }
 
         // checking is signal is from a syscall
