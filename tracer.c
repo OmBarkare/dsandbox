@@ -5,6 +5,7 @@
 #include <sys/user.h>
 #include <signal.h>
 #include <string.h>
+#include <stdlib.h>
 
 const char *syscalls[] = {
     [0] = "read",
@@ -50,6 +51,17 @@ void poke_string(pid_t pid, void *addr, const char *str, size_t len) {
     }
 }
 
+void peek_string(pid_t pid, unsigned long addr, char *buf, size_t len) {
+
+    long word;
+    unsigned long i = 0;
+    for(i=0; i<len; i+=sizeof(long)) {
+        word = ptrace(PTRACE_PEEKDATA, pid, addr + i, NULL);
+        long bytes = len - i > sizeof(long) ? sizeof(long) : len - i;
+        memcpy(buf+i, &word, bytes);
+    }
+}
+
 int main(int argc, char *argv[]) {
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <path_to_binary> [args...] \n", argv[0]);
@@ -67,13 +79,14 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    FILE *fp = fopen("info.txt", "w");
     int status = 0;
     int in_syscall = 0;
 
     int wait_pid = wait(&status);
     
     ptrace(PTRACE_SETOPTIONS, wait_pid, NULL, PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEEXEC);
-    printf("set ptraceoptions\n\n");
+    fprintf(fp, "set ptraceoptions\n\n");
 
     ptrace(PTRACE_SYSCALL, wait_pid, NULL, NULL);
 
@@ -81,7 +94,7 @@ int main(int argc, char *argv[]) {
         wait_pid = wait(&status);
 
         if(WIFEXITED(status)) {
-            printf("Child Exited with status code: %d\n\n", WEXITSTATUS(status));
+            fprintf(fp, "Child Exited with status code: %d\n\n", WEXITSTATUS(status));
             break;
         }
 
@@ -91,32 +104,41 @@ int main(int argc, char *argv[]) {
 
         // checking if signal is from a exec setup being completed
         if(status>>8 == (SIGTRAP | (PTRACE_EVENT_EXEC<<8))) {
-            printf("Child Finished setting up exec, returning control to child\n");
+            fprintf(fp, "Child Finished setting up exec, returning control to child\n");
         }
 
         // checking is signal is from a syscall
         if(WSTOPSIG(status) == (SIGTRAP|0x80)) {
             if(!in_syscall) {
                 in_syscall = 1;
-                printf("caller_pid: %d\n", wait_pid);
-                printf("entered syscall %s\n", get_syscall(regs.orig_rax));
+                fprintf(fp, "caller_pid: %d\n", wait_pid);
+                fprintf(fp, "entered syscall %s\n", get_syscall(regs.orig_rax));
 
                 if (regs.orig_rax == 1) {
                     unsigned int fd = regs.rdi;
                     const char *buf = regs.rsi;
                     size_t count = regs.rdx;
 
-                    char *str = "DISCO";
-                    size_t len = strlen(str);
-                    regs.rdx = len;
-                    ptrace(PTRACE_SETREGS, wait_pid, NULL, &regs);
-                    poke_string(wait_pid, (void *)buf, str, len);
+                    // PEEKING CHILDS WRITE BUFFER
+                    char *write_buf = (char *) malloc(count);
+                    printf("child buffer address: %X\n", buf);
+                    peek_string(wait_pid, buf, write_buf, count);
+                    printf("WRITE BUFFER HAD: %s\n", write_buf);
+
+                    // REPLACING CHILD BUFFER
+                    char *replacement_str = malloc(count);
+                    memset(replacement_str, ' ', count);
+                    memcpy(replacement_str, "DISCO\n", 6);
+                    replacement_str[count-1] = '\0';
+                    
+
+                    poke_string(wait_pid, (void *)buf, replacement_str, count);
                 }
 
                 fflush(stdout);
             } else {
                 in_syscall = 0;
-                printf("returned %lld\n\n", regs.rax);
+                fprintf(fp, "returned %lld\n\n", regs.rax);
             }
         }
 
