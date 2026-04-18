@@ -4,6 +4,7 @@
 #include <sys/wait.h>
 #include <sys/user.h>
 #include <signal.h>
+#include <string.h>
 
 const char *syscalls[] = {
     [0] = "read",
@@ -34,6 +35,19 @@ char *get_syscall(int syscall_id) {
         return "unknown";
     }
     return syscalls[syscall_id];
+}
+
+void poke_string(pid_t pid, void *addr, const char *str, size_t len) {
+    union {long val; char bytes[sizeof(long)]; } word;
+    for(int i=0; i<len; i+=sizeof(long)) {
+        memset(word.bytes, 0, sizeof(long));
+        size_t bytes_count = (len - i < sizeof(long)) ? len - i : sizeof(long);
+        memcpy(word.bytes, str + i, bytes_count);
+
+        // even if the function signature says long ptrace(enum __ptrace_request op, pid_t pid, oid *addr, void *data);
+        // for PTRACE_POKEDATA option, the final argument should be the data itself, and not a pointer to the data
+        ptrace(PTRACE_POKEDATA, pid, addr + i, word.val);
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -86,6 +100,19 @@ int main(int argc, char *argv[]) {
                 in_syscall = 1;
                 printf("caller_pid: %d\n", wait_pid);
                 printf("entered syscall %s\n", get_syscall(regs.orig_rax));
+
+                if (regs.orig_rax == 1) {
+                    unsigned int fd = regs.rdi;
+                    const char *buf = regs.rsi;
+                    size_t count = regs.rdx;
+
+                    char *str = "DISCO";
+                    size_t len = strlen(str);
+                    regs.rdx = len;
+                    ptrace(PTRACE_SETREGS, wait_pid, NULL, &regs);
+                    poke_string(wait_pid, (void *)buf, str, len);
+                }
+
                 fflush(stdout);
             } else {
                 in_syscall = 0;
