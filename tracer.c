@@ -136,27 +136,6 @@ int main(int argc, char *argv[]) {
 
                 read_syscall_args(wait_pid, regs);
 
-                if (regs.orig_rax == 1) {
-                    unsigned int fd = regs.rdi;
-                    const char *buf = regs.rsi;
-                    size_t count = regs.rdx;
-
-                    // PEEKING CHILDS WRITE BUFFER
-                    char *write_buf = (char *) malloc(count);
-                    printf("child buffer address: %llX\n", buf);
-                    peek_string(wait_pid, buf, write_buf, count);
-                    printf("WRITE BUFFER HAD: %s\n", write_buf);
-
-                    // REPLACING CHILD BUFFER
-                    char *replacement_str = malloc(count);
-                    memset(replacement_str, ' ', count);
-                    memcpy(replacement_str, "DISCO\n", 6);
-                    replacement_str[count-1] = '\0';
-                    
-
-                    poke_string(wait_pid, (void *)buf, replacement_str, count);
-                }
-
                 fflush(stdout);
             } else {
                 in_syscall = 0;
