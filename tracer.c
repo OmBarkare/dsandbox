@@ -11,12 +11,12 @@ const char *syscalls[] = {
     [0] = "read",
     [1] = "write",
     [3] = "close",
-    [5] = "fstat", // <-
-    [9] = "mmap", // <-
-    [10] = "mprotect", // <-
-    [11] = "munmap", // <-
+    [5] = "fstat",
+    [9] = "mmap",
+    [10] = "mprotect",
+    [11] = "munmap",
     [12] = "brk",
-    [16] = "ioctl", // <-
+    [16] = "ioctl",
     [17] = "pread64",
     [21] = "access",
     [137] = "statfs",
@@ -31,7 +31,7 @@ const char *syscalls[] = {
     [334] = "rseq",
 };
 
-char *get_syscall(int syscall_id) {
+char *get_syscall(unsigned long long syscall_id) {
     if(syscall_id < 0 || syscalls[syscall_id] == NULL) {
         return "unknown";
     }
@@ -59,6 +59,26 @@ void peek_string(pid_t pid, unsigned long addr, char *buf, size_t len) {
         word = ptrace(PTRACE_PEEKDATA, pid, addr + i, NULL);
         long bytes = len - i > sizeof(long) ? sizeof(long) : len - i;
         memcpy(buf+i, &word, bytes);
+    }
+}
+
+void read_syscall_args(pid_t pid, struct user_regs_struct regs) {
+    unsigned long long syscall_id = regs.orig_rax;
+
+    switch (syscall_id)
+    {
+    case 0:
+        // %rdi
+        fprintf(stdout, "unsigned int fd: %llu\n", regs.rdi);
+        // %rsi
+        fprintf(stdout, "buf address: %llX\n", regs.rsi);
+        // %rdx
+        size_t count = regs.rdx;
+        fprintf(stdout, "buf size: %llu\n", regs.rdx);
+        break;
+    
+    default:
+        break;
     }
 }
 
@@ -114,6 +134,8 @@ int main(int argc, char *argv[]) {
                 fprintf(fp, "caller_pid: %d\n", wait_pid);
                 fprintf(fp, "entered syscall %s\n", get_syscall(regs.orig_rax));
 
+                read_syscall_args(wait_pid, regs);
+
                 if (regs.orig_rax == 1) {
                     unsigned int fd = regs.rdi;
                     const char *buf = regs.rsi;
@@ -121,7 +143,7 @@ int main(int argc, char *argv[]) {
 
                     // PEEKING CHILDS WRITE BUFFER
                     char *write_buf = (char *) malloc(count);
-                    printf("child buffer address: %X\n", buf);
+                    printf("child buffer address: %llX\n", buf);
                     peek_string(wait_pid, buf, write_buf, count);
                     printf("WRITE BUFFER HAD: %s\n", write_buf);
 
@@ -138,7 +160,7 @@ int main(int argc, char *argv[]) {
                 fflush(stdout);
             } else {
                 in_syscall = 0;
-                fprintf(fp, "returned %lld\n\n", regs.rax);
+                fprintf(fp, "returning %lld\n\n", regs.rax);
             }
         }
 
