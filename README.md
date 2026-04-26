@@ -15,3 +15,6 @@ I want to be able to run binaries using dsandbox and log all of its behaviour wi
 actually execute suspicious syscalls, also without letting the binary know that it is being traced.
 
 I would like to like it in a format so that it is easier to analyse. I want to add different levels of verbosity for logging.
+
+Also add functionality to let the user control what action to take when specific syscalls are encountered
+(eg. if to replace the write buffer of child process, and what to replace it with)
