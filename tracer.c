@@ -33,21 +33,24 @@ const char *syscalls[] = {
 
 char *get_syscall(unsigned long long syscall_id) {
     if(syscall_id < 0 || syscalls[syscall_id] == NULL) {
+        fprintf(stdout, "unknown syscall id: %d\n", syscall_id);
         return "unknown";
     }
     return syscalls[syscall_id];
 }
 
-void poke_string(pid_t pid, void *addr, const char *str, size_t len) {
+// currently writes zeroes past the size limit if last word goes past limit.
+// May overwrite adjacent memory with zeroes
+void poke_string(pid_t pid, void *addr, const char *str, size_t str_len, size_t buf_len) {
     union {long val; char bytes[sizeof(long)]; } word;
-    for(int i=0; i<len; i+=sizeof(long)) {
+    for(size_t i=0; (i<str_len && i<buf_len); i+=sizeof(long)) {
         memset(word.bytes, 0, sizeof(long));
-        size_t bytes_count = (len - i < sizeof(long)) ? len - i : sizeof(long);
+        size_t bytes_count = (str_len - i < sizeof(long)) ? str_len - i : sizeof(long);
         memcpy(word.bytes, str + i, bytes_count);
 
         // even if the function signature says long ptrace(enum __ptrace_request op, pid_t pid, oid *addr, void *data);
         // for PTRACE_POKEDATA option, the final argument should be the data itself, and not a pointer to the data
-        ptrace(PTRACE_POKEDATA, pid, addr + i, word.val);
+        ptrace(PTRACE_POKEDATA, pid, (void *)((char *)addr + i), word.val);
     }
 }
 
@@ -68,6 +71,7 @@ void read_syscall_args(pid_t pid, struct user_regs_struct regs) {
     switch (syscall_id)
     {
     case 0:
+    {
         // %rdi
         fprintf(stdout, "unsigned int fd: %llu\n", regs.rdi);
         // %rsi
@@ -76,7 +80,25 @@ void read_syscall_args(pid_t pid, struct user_regs_struct regs) {
         size_t count = regs.rdx;
         fprintf(stdout, "buf size: %llu\n", regs.rdx);
         break;
+    }
+
+    case 1:
+    {
+        size_t count = regs.rdx;
+        // %rdi
+        fprintf(stdout, "unsigned int fd: %llu\n", regs.rdi);
+        // %rsi
+        const char *buf_addr = regs.rsi;
+        char *write_buffer = malloc(count+1);
+        write_buffer[count] = '\0';
+        fprintf(stdout, "buf address: %llX\n", buf_addr);
+        peek_string(pid, buf_addr, write_buffer, count);
+        fprintf(stdout, "write buffer:\n%s", write_buffer);
+        // %rdx
+        fprintf(stdout, "buf size: %llu\n", regs.rdx);
+        break;
     
+    }
     default:
         break;
     }
@@ -118,10 +140,6 @@ int main(int argc, char *argv[]) {
             break;
         }
 
-        struct user_regs_struct regs;
-        
-        ptrace(PTRACE_GETREGS, wait_pid, NULL, &regs);
-
         // checking if signal is from a exec setup being completed
         if(status>>8 == (SIGTRAP | (PTRACE_EVENT_EXEC<<8))) {
             fprintf(fp, "Child Finished setting up exec, returning control to child\n");
@@ -129,12 +147,19 @@ int main(int argc, char *argv[]) {
 
         // checking is signal is from a syscall
         if(WSTOPSIG(status) == (SIGTRAP|0x80)) {
+
+            struct user_regs_struct regs;
+            ptrace(PTRACE_GETREGS, wait_pid, NULL, &regs);
+
             if(!in_syscall) {
                 in_syscall = 1;
                 fprintf(fp, "caller_pid: %d\n", wait_pid);
                 fprintf(fp, "entered syscall %s\n", get_syscall(regs.orig_rax));
 
                 read_syscall_args(wait_pid, regs);
+                if(regs.orig_rax == 1) {
+                    poke_string(wait_pid, regs.rsi, "I AM DISCO", strlen("I AM DISCO"), regs.rdx);
+                }
 
                 fflush(stdout);
             } else {
