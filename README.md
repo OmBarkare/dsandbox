@@ -10,6 +10,9 @@ reality for the binary
 - change and look at register values
 - read at write to child's memory
 
+## How it works
+currently, it works using ptrace and its differnt options to stop and resume a process, read and write to its memory and registers
+
 ## What I want it to do
 I want to be able to run binaries using dsandbox and log all of its behaviour without letting the binary
 actually execute suspicious syscalls, also without letting the binary know that it is being traced.
